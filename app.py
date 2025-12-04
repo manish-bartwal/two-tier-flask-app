@@ -1,29 +1,32 @@
 import os
-from flask import Flask, render_template, request, redirect, url_for, jsonify
+from flask import Flask, render_template, request, jsonify
 from flask_mysqldb import MySQL
 
 app = Flask(__name__)
 
-# Configure MySQL from environment variables
-app.config['MYSQL_HOST'] = os.environ.get('MYSQL_HOST', 'localhost')
-app.config['MYSQL_USER'] = os.environ.get('MYSQL_USER', 'default_user')
-app.config['MYSQL_PASSWORD'] = os.environ.get('MYSQL_PASSWORD', 'default_password')
-app.config['MYSQL_DB'] = os.environ.get('MYSQL_DB', 'default_db')
+# Take DB config ONLY from environment variables (no localhost fallback)
+app.config['MYSQL_HOST'] = os.environ['MYSQL_HOST']
+app.config['MYSQL_USER'] = os.environ['MYSQL_USER']
+app.config['MYSQL_PASSWORD'] = os.environ['MYSQL_PASSWORD']
+app.config['MYSQL_DB'] = os.environ['MYSQL_DB']
 
-# Initialize MySQL
 mysql = MySQL(app)
 
 def init_db():
-    with app.app_context():
-        cur = mysql.connection.cursor()
-        cur.execute('''
-        CREATE TABLE IF NOT EXISTS messages (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            message TEXT
-        );
-        ''')
-        mysql.connection.commit()  
-        cur.close()
+    cur = mysql.connection.cursor()
+    cur.execute('''
+    CREATE TABLE IF NOT EXISTS messages (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        message TEXT
+    );
+    ''')
+    mysql.connection.commit()
+    cur.close()
+
+# Run DB init only before first request (NOT at container startup)
+@app.before_first_request
+def initialize():
+    init_db()
 
 @app.route('/')
 def hello():
@@ -42,7 +45,13 @@ def submit():
     cur.close()
     return jsonify({'message': new_message})
 
+# optional health route for Kubernetes probes
+@app.route('/healthz')
+def health():
+    return "ok", 200
+
 if __name__ == '__main__':
-    init_db()
+    # DO NOT CALL init_db() HERE — it breaks Kubernetes
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
